@@ -5,17 +5,36 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 )
+
+// responseWriter는 http.ResponseWriter를 래핑하여 응답 상태 코드를 캡처합니다.
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
 
 // loggingMiddleware는 들어오는 모든 HTTP 요청에 대한 정보를 로깅하는 미들웨어입니다.
 func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		slog.Info("Incoming request",
+		start := time.Now()
+
+		// ResponseWriter를 래핑하여 상태 코드를 캡처합니다.
+		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+
+		next.ServeHTTP(rw, r)
+
+		slog.Info("Handled request",
 			"method", r.Method,
 			"path", r.URL.Path,
-			"remote_addr", r.RemoteAddr,
+			"status", rw.status,
+			"duration", time.Since(start),
 		)
-		next.ServeHTTP(w, r)
 	}
 }
 func main() {
@@ -26,6 +45,8 @@ func main() {
 		slog.Error("`KAKAO_API_KEY` 정의 되지 않았음.")
 		os.Exit(1)
 	}
+	slog.Info("KAKAO_API_KEY", os.Getenv("KAKAO_API_KEY"))
+	slog.Info("LOG_LEVEL", os.Getenv("LOG_LEVEL"))
 
 	apiHandler := &lib.ApiHandler{Logger: logger}
 
